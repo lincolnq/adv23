@@ -200,13 +200,13 @@ class FancyRe(ParseFormat):
     """
     def __init__(self, regex_pat, ngroups) -> None:
         super().__init__()
-        self.re = regex_pat
+        self.re = re.compile(regex_pat)
         self.ngroups = ngroups
 
     def parse(self, data):
         m = self.re.match(data)
         if not m:
-            raise Exception(f"Failed to parse using FancyRe: {repr(data)}")
+            raise Exception(f"Failed to parse using FancyRe '{self.re}': {repr(data)}")
         return tuple(m.group(g + 1) for g in range(self.ngroups))
 
 
