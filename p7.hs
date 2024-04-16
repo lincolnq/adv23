@@ -3,14 +3,14 @@ import Data.Maybe
 import Data.Function
 --import Control.Exception
 
-data Card = Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | J | Q | K | A
+data Card = Joker | Two | Three | Four | Five | Six | Seven | Eight | Nine | Ten | Q | K | A
     deriving (Eq, Ord, Enum, Bounded, Show)
 
 printCard :: Card -> String
-printCard = pure . ("23456789TJQKA" !!) . fromEnum
+printCard = pure . ("J23456789TQKA" !!) . fromEnum
 
 readCard :: Char -> Card
-readCard = toEnum . fromJust . (`elemIndex` "23456789TJQKA")
+readCard = toEnum . fromJust . (`elemIndex` "J23456789TQKA")
 
 data Hand = Hand { cards :: [Card] }
     deriving (Eq, Show)
@@ -31,6 +31,7 @@ rankHand (Hand cs) | length cs == 5 = rankHand5 cs
 
 rankHand5 :: [Card] -> Rank
 rankHand5 cs 
+    | countJokers == 5 = FiveOfAKind
     | countFirst == 5 = FiveOfAKind
     | countFirst == 4 = FourOfAKind
     | countFirst == 3 && countSecond == 2 = FullHouse
@@ -39,9 +40,10 @@ rankHand5 cs
     | countFirst == 2 = OnePair
     | otherwise = HighCard
     where
-        countFirst = counts !! 0
+        countJokers = length $ filter (== Joker) cs
+        countFirst = counts !! 0 + countJokers
         countSecond = counts !! 1
-        counts = reverse $ sort $ map length $ group $ sort cs
+        counts = reverse $ sort $ map length $ group $ sort $ filter (/= Joker) cs
 
 instance Ord Hand where
     compare h1 h2 
@@ -73,8 +75,21 @@ runTests = do
     assert (readHand "33332" > readHand "2AAAA")
     assert (readHand "77888" > readHand "77788")
 
-parse = do
-    rows <- fmap (fmap words . lines) $ readFile "p7inp.txt"
+    -- joker tests
+    assert (rankHand (readHand "JJJJJ") == FiveOfAKind) 
+    assert (rankHand (readHand "T55J5") == FourOfAKind)
+    assert (rankHand (readHand "KTJJT") == FourOfAKind)
+    assert (rankHand (readHand "QQQJA") == FourOfAKind)
+    assert (sort (map readHand ["T55J5", "KTJJT", "QQQJA"]) == map readHand ["T55J5", "QQQJA", "KTJJT"])
+
+
+parse fn = do
+    rows <- fmap (fmap words . lines) $ readFile fn
     let res = [(readHand h, read bid::Int) | h:bid:_ <- rows]
     --putStrLn $ show $ res
     return res
+
+readSamp = parse "p7samp.txt"
+readReal = parse "p7inp.txt"
+
+result hs = sum [ rank * bid | (rank, (_, bid)) <- zip [1..] (sort hs)]
