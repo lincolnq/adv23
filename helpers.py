@@ -66,7 +66,7 @@ class Split(ParseFormat):
     
     Also, unless autostrip=False, strip()s the input before parsing.
     """
-    def __init__(self, delim, autostrip=True) -> None:
+    def __init__(self, delim=None, autostrip=True) -> None:
         super().__init__()
         self.delim = delim
         self.autostrip = autostrip
