@@ -38,8 +38,8 @@ class SeparateParses(ParseFormat):
         super().__init__()
         self.lhs = lhs
         assert not args or not kwargs, "must provide either args or kwargs but not both"
-        self.args = args
-        self.kwargs = kwargs
+        self.args = [self._wrap(x) for x in args]
+        self.kwargs = {k: self._wrap(v) for (k,v) in kwargs.items()}
 
     def parse(self, data):
         lhs_result = self.lhs.parse(data)
