@@ -1,0 +1,58 @@
+%tx -> dx
+%nx -> fn, conj4
+%nr -> cj, conj1
+%nk -> conj2, vk
+%mv -> fk, conj4
+&conj3 -> kt, inv3, mb, vr, hp, jp, tx
+&conj2 -> fb, zb, jq, inv2, lp
+%vp -> lp, conj2
+&inv1 -> final
+%lj -> conj2, dt
+%jh -> conj1
+%xc -> nx
+%hx -> xb
+%kd -> conj3, pp
+%jq -> conj2, qt
+%lp -> jm
+%ph -> mb, conj3
+&inv2 -> final
+%ff -> xc
+%th -> conj1, hx
+%kt -> ct
+%ct -> kd, conj3
+&conj1 -> bc, inv1, hx, xb, nv
+&inv3 -> final
+%fn -> kn
+%sk -> hr
+%nv -> conj1, th
+%dx -> conj3, ph
+broadcaster -> bx, jq, nv, jp
+%dt -> conj2, zb
+%fx -> sk, conj4
+%rv -> conj4
+%gv -> conj1, nr
+%fk -> conj4, rv
+%cj -> conj1, vh
+%xk -> conj2, nk
+%vh -> conj1, jh
+%zb -> fb
+%mb -> jc
+%kn -> conj4, mv
+%jc -> conj3, kt
+&inv4 -> final
+%hp -> tx
+%jf -> bc, conj1
+%fb -> vp
+%xm -> conj1, gv
+%jm -> conj2, xk
+%vr -> hp
+%hr -> ff
+%jp -> conj3, vr
+&conj4 -> fn, hr, bx, ff, xc, inv4, sk
+%pp -> conj3
+&final -> rx
+%xb -> jf
+%bx -> conj4, fx
+%bc -> xm
+%qt -> lj, conj2
+%vk -> conj2
