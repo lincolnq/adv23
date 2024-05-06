@@ -19,8 +19,8 @@ from helpers import *
 
 parser = Matrix()
 
-input = parser.parse(samp)
-#input = parser.parse(open('p21inp.txt').read())
+#input = parser.parse(samp)
+input = parser.parse(open('p21inp.txt').read())
 start = tuple(np.argwhere(input == 'S')[0])
 input[input == 'S'] = '.'
 
@@ -40,13 +40,13 @@ def progress(g):
     g2[neighbors] = 'O'
     return g2
 
-printgrid(input)
+# printgrid(input)
 g = input
-for _ in range(64):
-    g = progress(g)
-    print()
-    printgrid(g)
-    print(np.sum(g == 'O'))
+# for _ in range(64):
+#     g = progress(g)
+#     print()
+#     printgrid(g)
+#     print(np.sum(g == 'O'))
 
 
 # for part 2 we need a quad tree
@@ -68,6 +68,7 @@ class QNode:
     def __repr__(self) -> str:
         return f"QNode(rank={self.rank}, pop={self.count})"
 
+    @functools.cache
     def centered_subsquare(self):
         """Returns the subsquare of rank-1 that is centered at our center."""
         return QNode.make(*(self.children[i].children[3-i] for i in range(4)))
@@ -112,16 +113,18 @@ class QNode:
     def make(*children):
         # if any QNode exists with these exact children, return it,
         # otherwise create a new one.
-        assert len(children) == 4
-        assert all(c.rank == children[0].rank for c in children)
+        #assert len(children) == 4
+        #assert all(c.rank == children[0].rank for c in children)
 
         ids = tuple(id(c) for c in children)
         if ids in ALL_NODES:
             #print("found existing node")
             return ALL_NODES[ids]
         else:
-            n = QNode(rank=max(c.rank for c in children) + 1, children=children)
+            n = QNode(rank=children[0].rank + 1, children=children)
             ALL_NODES[ids] = n
+            if len(ALL_NODES) % 100000 == 0:
+                print(f"all nodes size: {len(ALL_NODES)} - just added rank {n.rank}")
             return n
 
 def subcenters(rank, center):
@@ -147,8 +150,15 @@ EMPTY = QNode(rank=0, children=None); EMPTY.val = '.'
 ROCK = QNode(rank=0, children=None); ROCK.val = '#'
 STEP = QNode(rank=0, children=None); STEP.val = 'O'
 
+LOAD_MEMO = {}
+
 def load_quads(g: np.ndarray, center: tuple[int, int], rank: int) -> QNode:
     # load copies of grid into QNode(s). qnode returned should be of the given rank.
+
+    # memoize only loads of the input array
+    memokey = (center[0] % g.shape[0], center[1] % g.shape[1], rank)
+    if g is input and memokey in LOAD_MEMO:
+        return LOAD_MEMO[memokey]
     
     #if rank==0:
     #    print(f"loading rank {rank} at {center}")
@@ -162,16 +172,19 @@ def load_quads(g: np.ndarray, center: tuple[int, int], rank: int) -> QNode:
             return STEP
     else:
         children = [load_quads(g, subcenter, rank - 1) for subcenter in subcenters(rank, center)]
-        return QNode.make(*children)
+        result = QNode.make(*children)
+        LOAD_MEMO[memokey] = result
+        return result
 
 def update_quad(q: QNode, center: tuple[int, int], dest: tuple[int, int], c: QNode) -> QNode:
     """Update the quad tree q, centered at 'center', such that the cell at 'dest' is set to c."""
 
     if q.rank == 0:
-        assert center == dest
+        assert center == dest, f"center={center}, dest={dest}, rank={q.rank}"
         return c
     
     childix = 2 * (dest[0] >= center[0]) + (dest[1] >= center[1])
+    
     newchild = update_quad(q.children[childix], subcenters(q.rank, center)[childix], dest, c)
     return QNode.make(*[newchild if i == childix else q.children[i] for i in range(4)])
 
@@ -204,6 +217,9 @@ def advance_timestep(q: QNode) -> QNode:
     them out of rank-2 subsquares.
     """
 
+    if q.count == 0:
+        return q.centered_subsquare()
+
     # check the memo
     if id(q) in ADVANCE_MEMO:
         return ADVANCE_MEMO[id(q)]
@@ -218,6 +234,8 @@ def advance_timestep(q: QNode) -> QNode:
         # and return the 1-rank node at the center of resulting grid
         result = load_quads(g2, (2, 2), 1)
         ADVANCE_MEMO[id(q)] = result
+        if len(ADVANCE_MEMO) % 100000 == 0:
+            print(f"advance memo size: {len(ADVANCE_MEMO)}")
         return result
         
     #breakpoint()
@@ -232,38 +250,54 @@ def advance_timestep(q: QNode) -> QNode:
         advance_timestep(QNode.make(ss_center, ss_edges[3], ss_edges[2], ss_corners[3])),
     )
     ADVANCE_MEMO[id(q)] = result
+    if len(ADVANCE_MEMO) % 100000 == 0:
+        print(f"advance memo size: {len(ADVANCE_MEMO)}")
     return result
 
 ADVANCE_FAST_MEMO = {}
 
-def advance_timestep_fast(q: QNode) -> QNode:
-    """Advance by powers of 2 instead of one step at a time.
+PEAK_RANK = 0
+
+def advance_timestep_fast(q: QNode, steps: int) -> QNode:
+    """Advance by (up to) powers of 2 instead of one step at a time.
 
     Same args as advance_timestep, same constraints (advances the center subsquare).
 
-    A rank 3 node will be advanced 1 step, rank 4 2 steps:
-        steps = 2 ** (rank - 3)
+    A rank 3 node can be advanced at most 1 step, rank 4 2 steps:
+        max_steps = 2 ** (rank - 3)
     """
 
-    if q.rank <= 3:
+    if q.count == 0:
+        return q.centered_subsquare()
+
+    #print(f"ADVANCE FAST({q}, steps={steps})")
+    maxsteps = max_steps(q.rank)
+    assert 0 <= steps <= maxsteps
+
+    if steps == 0:
+        return q.centered_subsquare()
+    
+    if steps == 1 or q.rank <= 3:
         # don't memoize here or we duplicate the non-fast advance memo
         return advance_timestep(q)
 
-    if id(q) in ADVANCE_FAST_MEMO:
-        return ADVANCE_FAST_MEMO[id(q)]
-    
+    midpoint_steps = min(steps, maxsteps // 2)
+    final_steps = steps - midpoint_steps
 
-    ss_center = advance_timestep_fast(q.centered_subsquare())
-    ss_corners = [advance_timestep_fast(q.children[i]) for i in range(4)]
-    ss_edges = [advance_timestep_fast(q.subsquare_edge(i)) for i in range(4)]
+    if (id(q), steps) in ADVANCE_FAST_MEMO:
+        return ADVANCE_FAST_MEMO[(id(q), steps)]
+
+    ss_center = advance_timestep_fast(q.centered_subsquare(), midpoint_steps)
+    ss_corners = [advance_timestep_fast(q.children[i], midpoint_steps) for i in range(4)]
+    ss_edges = [advance_timestep_fast(q.subsquare_edge(i), midpoint_steps) for i in range(4)]
 
     # PAUSE POINT: we have 9 subsquares into half-result. Point to be able to render it
     
     result = QNode.make(
-        advance_timestep_fast(QNode.make(ss_corners[0], ss_edges[0], ss_edges[1], ss_center)),
-        advance_timestep_fast(QNode.make(ss_edges[0], ss_corners[1], ss_center, ss_edges[3])),
-        advance_timestep_fast(QNode.make(ss_edges[1], ss_center, ss_corners[2], ss_edges[2])),
-        advance_timestep_fast(QNode.make(ss_center, ss_edges[3], ss_edges[2], ss_corners[3])),
+        advance_timestep_fast(QNode.make(ss_corners[0], ss_edges[0], ss_edges[1], ss_center), final_steps),
+        advance_timestep_fast(QNode.make(ss_edges[0], ss_corners[1], ss_center, ss_edges[3]), final_steps),
+        advance_timestep_fast(QNode.make(ss_edges[1], ss_center, ss_corners[2], ss_edges[2]), final_steps),
+        advance_timestep_fast(QNode.make(ss_center, ss_edges[3], ss_edges[2], ss_corners[3]), final_steps),
     )
 
     ## SLOW STUFF
@@ -307,11 +341,16 @@ def advance_timestep_fast(q: QNode) -> QNode:
         if q.rank >= 4 and q.count > 0:
             print(f"ADVANCE FAST({q}, centerpop={q.centered_subsquare().count}) -> midpoint(count={np.sum(midpoint9 == 'O')}) -> {result}.  (midpoint slowgrid pop={np.sum(slowgrid2 == 'O')}, endpoint slowgrid pop={np.sum(slowgrid == 'O')})")
 
-    ADVANCE_FAST_MEMO[id(q)] = result
-    return result
+    ADVANCE_FAST_MEMO[(id(q), steps)] = result
+    if len(ADVANCE_FAST_MEMO) % 100000 == 0:
+        print(f"advance fast memo size: {len(ADVANCE_FAST_MEMO)}, key")
 
-#def advance_timestep_halffast(q: QNode) -> QNode:
-#    """Advance at half speed"""
+    global PEAK_RANK
+    if result.rank > PEAK_RANK:
+        PEAK_RANK = result.rank
+        print(f"Peak rank is now {PEAK_RANK}")
+
+    return result
 
 
 # we'll cache the quads loaded at 0,0 since we need to reuse them every generation.
@@ -370,19 +409,24 @@ def run_tests():
     expected = progress(q.grid)
     printgrid(expected)
     print(np.sum(expected == 'O'))
-    q2 = simulate(q)[0].centered_subsquare()
+    q2 = simulate1(q).centered_subsquare()
     printgrid(q2.grid)
     print(q2.count)
     assert np.all(expected == q2.grid)
 
+def max_steps(rank: int) -> int:
+    if rank < 3:
+        return 1
+    return 2 ** (rank - 3)
     
 
-def expand_for_advance(q: QNode) -> QNode:
-    # before we take a step, check how much we need to expand the universe
+def expand_for_advance(q: QNode, desired_steps: int) -> QNode:
+    # before we take our first step, we may need to expand the universe
     # Since the step could fill to expand q.centered_subsquare and then we throw 
     # away everything outside that when we advance, we aren't ready to simulate
     # until we know the doubly centered subsquare is the only populated region
-    while q.centered_subsquare().centered_subsquare().count < q.count:
+    while ((max_steps(q.rank) < desired_steps)
+            or (q.centered_subsquare().centered_subsquare().count != q.count)):
         q = expand(q, (0, 0))
 
     return q
@@ -392,56 +436,61 @@ def shrink(q: QNode) -> QNode:
         q = q.centered_subsquare()
     return q
 
-def simulate(q: QNode) -> tuple[QNode, int]:
+def simulate(q: QNode, steps: int) -> tuple[QNode, int]:
     print(f"SIMULATE - starting with {q}")
-    q = expand_for_advance(q)
+    q = expand_for_advance(q, steps)
     print(f"SIMULATE - expanded to {q}")
-    steps = 2 ** (q.rank - 3)
-    return advance_timestep_fast(q), steps
+    return advance_timestep_fast(q, steps)
 
 def simulate1(q: QNode) -> tuple[QNode, int]:
-    q = expand_for_advance(q)
-    return advance_timestep(q), 1
+    q = expand_for_advance(q, 1)
+    return advance_timestep(q)
 
 
-# next steps: 
-# x- implement advance_timestep()
-# x- memoize
-# x- make the quad tree infinite somehow
-#  - implement advancing timesteps by powers of 2
-# x- and (hopefully not least) make a counting function
+q = load_quads(input, (0, 0), 10)
+q = update_quad(q, (0, 0), start, STEP)
 
+#import cProfile
+#cProfile.run('simulate(q, 26501365)')
 
 def go():
-    q = load_quads(input, (0, 0), 9)
+    q = load_quads(input, (0, 0), 10)
     q = update_quad(q, (0, 0), start, STEP)
     #print_quad(q)
     print(f"Starting pop is {q.count}\n")
+    
+    target_steps = 26501365
 
-    steps = 0
+    qfast = simulate(q, target_steps)
+    print(f"Population after {target_steps} steps is {qfast.count}")
 
-    qfast, faststeps = simulate(q)
-    shrinkfast = shrink(qfast)
-    print(f"shrink qfast: {qfast.count} and {shrinkfast.count}")
 
-    for gen in range(faststeps):
-        q, addsteps = simulate1(q)
-        steps += addsteps
-        #print_quad(q)
-        print(f"on step {steps} Population is now {q.count}\n")
-        if steps == faststeps:
-            break
+#    for target_steps in [26501365]:
+        
 
-    shrinkslow = shrink(q)
-    # now compare
-    if np.all(shrinkfast.grid == shrinkslow.grid):
-        print(f"fast and slow agree after {steps} steps.")
-    else:
-        print(f"fast and slow disagree after {steps} steps.")
-        print("fast:")
-        print_quad(shrinkfast)
-        print("slow:")
-        print_quad(shrinkslow)
+    # SIM_STEPS = 100
+
+    # #print(f"shrink qfast: {qfast.count} and {shrinkfast.count}")
+    # qslow = q
+
+    # for step in range(SIM_STEPS):
+    #     qfast = simulate(q, step+1)
+    #     qslow = simulate1(qslow)
+        
+    #     print(f"on step {step + 1}: Fast Population is now {qfast.count}, slow is {qslow.count}\n")
+    #     assert qfast.count == qslow.count
+
+    # shrinkslow = shrink(q)
+    # # now compare
+    # if np.all(shrinkfast.grid == shrinkslow.grid):
+    #     print(f"fast and slow agree after {steps} steps.")
+    # else:
+    #     print(f"fast and slow disagree after {steps} steps.")
+    #     print("fast:")
+    #     print_quad(shrinkfast)
+    #     print("slow:")
+    #     print_quad(shrinkslow)
 
 #run_tests()
+
 go()
